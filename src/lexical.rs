@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
 use std::str::from_utf8;
+use std::fmt::{self, Display};
 
 static mut fp: Option<File> = None;
 static mut lineno: i32 = 0;
@@ -39,6 +40,51 @@ fn read_string() {
     }
 }
 
+fn is_valid_token(id_lexeme: &str) -> Result<(), SyntaxError> {
+    if id_lexeme.starts_with('_') {
+        return Err(SyntaxError {
+            message: format!("found: '{}'", id_lexeme),
+            line_no: get_lineno(),
+            function: "is_valid_token".to_string(),
+        });
+    }
+
+    for window in id_lexeme.windows(2) {
+        if window == "__" {
+            return Err(SyntaxError {
+                message: format!("found: '{}'", id_lexeme),
+                line_no: get_lineno(),
+                function: "is_valid_token".to_string(),
+            });
+        }
+    }
+
+    if id_lexeme.ends_with('_') {
+        return Err(SyntaxError {
+            message: format!("found: '{}'", id_lexeme),
+            line_no: get_lineno(),
+            function: "is_valid_token".to_string(),
+        });
+    }
+
+    Ok(())
+}
+
+#[derive(Debug)]
+struct SyntaxError {
+    message: String,
+    line_no: i32,
+    function: String,
+}
+
+impl Display for SyntaxError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "SYNTAX ERROR in {} at Line:{} {}", self.function, self.line_no, self.message)
+    }
+}
+
+impl std::error::Error for SyntaxError {}
+
 fn lexan() -> i32 {
 
     for ch in BufReader::new(FP).bytes() {
@@ -52,7 +98,7 @@ fn lexan() -> i32 {
         } else if ch == b'~' {
             // ignore comments - remove the comment
             loop {
-                let next_ch = fp.bytes().next().unwrap().unwrap();
+                let next_ch = FP.bytes().next().unwrap().unwrap();
                 if next_ch == b'\n' {
                     break;
                 }
