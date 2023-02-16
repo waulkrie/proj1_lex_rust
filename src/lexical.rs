@@ -1,28 +1,36 @@
 use std::fs::File;
-use std::io::{BufReader, Read};
-use std::path::Path;
-use std::str::from_utf8;
-use std::fmt::{self, Display};
+use std::io::{BufReader, Read, Seek};
+use std::str::{from_utf8};
+use crate::syntax_error::SyntaxError;
 
-static mut fp: Option<File> = None;
-static mut lineno: i32 = 0;
+const VAL_LEN: usize = 25;
+const DEFAULT_MAP_SIZE: usize = 1024;
+static mut FP: Option<BufReader<File>> = None;
+static mut LINE_NO: i32 = 0;
 static mut ID_LEXEME: [u8; VAL_LEN] = [0; VAL_LEN];
 static mut NUM_LEXEME: [u8; VAL_LEN] = [0; VAL_LEN];
 
 pub fn get_lineno() -> i32 {
-    unsafe { LINENO }
+    unsafe { LINE_NO }
 }
-fn open_file(file_name: &str) -> Result<File, std::io::Error> {
+
+fn open_file(file_name: &str) -> Result<BufReader<File>, std::io::Error> {
     let mut file = File::open(file_name)?; // ? operator immediately returns the error to the caller
+    let mut temp = BufReader::new(file);
     unsafe { LINE_NO = 1 };
-    Ok(file)
+    Ok(temp)
 }
-fn read_string() {
+
+fn read_token_helper(ch: char) -> bool {
+    ![' ', '\n', ';', '+', '-', '*', '/', '(', ')'].contains(&ch)
+}
+
+unsafe fn read_string() {
     let mut i = 0;
     let mut buffer = [0u8; DEFAULT_MAP_SIZE];
     loop {
         let ch = FP.as_mut().unwrap().bytes().next().unwrap().unwrap(); //this smells bad.. think of a rust way to fix this
-        if (ch as char).is_alphabetic() || read_token_helper(ch) && i < DEFAULT_MAP_SIZE {
+        if (ch as char).is_alphabetic() || read_token_helper(ch as char) && i < DEFAULT_MAP_SIZE {
             buffer[i] = ch;
             i += 1;
         } else {
@@ -41,7 +49,7 @@ fn read_string() {
 }
 
 fn is_valid_token(id_lexeme: &str) -> Result<(), SyntaxError> {
-    if id_lexeme.starts_with('_') {
+    if id_lexeme.starts_with('_') || id_lexeme.ends_with('_'){
         return Err(SyntaxError {
             message: format!("found: '{}'", id_lexeme),
             line_no: get_lineno(),
@@ -49,43 +57,24 @@ fn is_valid_token(id_lexeme: &str) -> Result<(), SyntaxError> {
         });
     }
 
-    for window in id_lexeme.windows(2) {
-        if window == "__" {
-            return Err(SyntaxError {
-                message: format!("found: '{}'", id_lexeme),
-                line_no: get_lineno(),
-                function: "is_valid_token".to_string(),
-            });
+    let mut prev_char: Option<char> = None;
+    for c in id_lexeme.chars() {
+        if let Some(prev) = prev_char  {
+            if prev == '_' && c == '_' {
+                return Err(SyntaxError {
+                    message: format!("found: '{}'", id_lexeme),
+                    line_no: get_lineno(),
+                    function: "is_valid_token".to_string(),
+                });
+            }
         }
-    }
-
-    if id_lexeme.ends_with('_') {
-        return Err(SyntaxError {
-            message: format!("found: '{}'", id_lexeme),
-            line_no: get_lineno(),
-            function: "is_valid_token".to_string(),
-        });
+        prev_char = Some(c);
     }
 
     Ok(())
 }
 
-#[derive(Debug)]
-struct SyntaxError {
-    message: String,
-    line_no: i32,
-    function: String,
-}
-
-impl Display for SyntaxError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "SYNTAX ERROR in {} at Line:{} {}", self.function, self.line_no, self.message)
-    }
-}
-
-impl std::error::Error for SyntaxError {}
-
-fn lexan() -> i32 {
+unsafe fn lexan() -> i32 {
 
     for ch in BufReader::new(FP).bytes() {
         let ch = ch.unwrap();
@@ -93,7 +82,7 @@ fn lexan() -> i32 {
             // ignore whitespaces
         } else if ch == b'\n' {
             unsafe {
-                lineno += 1;
+                LINE_NO += 1;
             }
         } else if ch == b'~' {
             // ignore comments - remove the comment
@@ -105,12 +94,12 @@ fn lexan() -> i32 {
             }
         } else if ch.is_ascii_digit() {
             // read num into numLexeme
-            read_num();
+            // read_num();
             return NUM;
         } else if ch.is_ascii_alphabetic() {
             // read id into idLexeme
             read_string();
-            if !is_valid_token() {
+            if !is_valid_token(idLexeme) {
                 return ERROR;
             }
             let idtype = lookup(idLexeme); // ensure null term
